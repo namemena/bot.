@@ -1,0 +1,552 @@
+import asyncio
+import random
+import sqlite3
+from datetime import datetime
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+TOKEN = "8698326936:AAHe_J6GNtc1tuZWQrA3dMx0r9wtsPLy3ag"
+CREATOR_ID = 8486666280
+ADMINS = [8486666280, 6478181787, 5598980802]
+
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+conn = sqlite3.connect('werx_bot.db')
+c = conn.cursor()
+
+# УДАЛЕНИЕ СТАРЫХ ТАБЛИЦ
+for table in ['users', 'shop', 'bets_log', 'love', 'cases', 'boss_fight']:
+    c.execute(f'DROP TABLE IF EXISTS {table}')
+
+# СОЗДАНИЕ ТАБЛИЦЫ USERS (разбито на строки)
+c.execute('''CREATE TABLE users (
+    user_id INTEGER PRIMARY KEY,
+    werx INT DEFAULT 1000,
+    diamonds INT DEFAULT 0,
+    werk INT DEFAULT 0,
+    rubins INT DEFAULT 0,
+    stars INT DEFAULT 0,
+    prestige INT DEFAULT 1,
+    souls INT DEFAULT 0,
+    love_points INT DEFAULT 0,
+    love_level INT DEFAULT 0,
+    last_daily TEXT,
+    xp INT DEFAULT 0,
+    level INT DEFAULT 1,
+    sytana_wins INT DEFAULT 0,
+    boss_wins INT DEFAULT 0,
+    crystals INT DEFAULT 0,
+    energy INT DEFAULT 100
+)''')
+
+c.execute('CREATE TABLE shop(item_id INTEGER PRIMARY KEY, name TEXT, price_werk INTEGER, reward_stars INTEGER)')
+c.execute('CREATE TABLE bets_log(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, game TEXT, bet INTEGER, result TEXT, change INTEGER, time TEXT)')
+c.execute('CREATE TABLE love(id INTEGER PRIMARY KEY AUTOINCREMENT, from_user INTEGER, to_user INTEGER, amount INTEGER, message TEXT, time TEXT)')
+c.execute('CREATE TABLE cases(case_id INTEGER PRIMARY KEY, name TEXT, price INTEGER, currency TEXT, rewards TEXT, chance INTEGER DEFAULT 10)')
+c.execute('CREATE TABLE boss_fight(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, boss_hp INTEGER, start_time TEXT)')
+
+# ТОВАРЫ
+shop_items = [
+    (1, "⭐1⭐", 10, 1),
+    (2, "⭐⭐5⭐", 50, 5),
+    (3, "⭐⭐⭐10⭐", 100, 10),
+    (4, "💎100💎", 200, 0),
+    (5, "👻50👻", 500, 0),
+    (6, "🔮50🔮", 300, 0),
+    (7, "⚡25⚡", 150, 0)
+]
+c.executemany('INSERT OR IGNORE INTO shop VALUES(?,?,?,?)', shop_items)
+
+# КЕЙСЫ
+cases_data = [
+    (1, "📦Обычный", 100, "werx", "50,75,100,125,150,200", 25),
+    (2, "💎Алмазный", 300, "diamonds", "20,30,40,50,60,80,100", 20),
+    (3, "🌟Легендарный", 1500, "werx", "500,600,700,800,900,1000,1500", 15),
+    (4, "👻Кейс душ", 500, "souls", "15,20,25,30,35,40,50", 22),
+    (5, "🎭Аниме", 800, "werx", "200,250,300,350,400,500,600,800", 18),
+    (6, "👑Королевский", 3000, "werx", "1000,1500,2000,2500,3000,4000,5000", 12),
+    (7, "⚡Мега кейс", 8000, "werx", "3000,4000,5000,6000,7000,8000,10000,15000", 8),
+    (8, "💖Любовный", 500, "love_points", "30,40,50,60,70,80,100", 20),
+    (9, "✨Звёздный", 300, "stars", "15,20,25,30,35,40,50", 25),
+    (10, "🔮Мифический", 5000, "werx", "2000,3000,4000,5000,6000,7000,8000,10000", 10),
+    (11, "🌙Лунный", 2000, "souls", "50,60,70,80,90,100,120,150", 15),
+    (12, "🔥Пламенный", 4000, "werx", "1500,2000,2500,3000,3500,4000,5000,6000", 12),
+    (13, "❄️Ледяной", 2500, "diamonds", "100,120,140,160,180,200,250,300", 18),
+    (14, "🌀Хаотичный", 6000, "werx", "2000,3000,4000,5000,6000,7000,8000,10000,12000", 8),
+    (15, "👁️Божественный", 15000, "werx", "8000,10000,12000,15000,20000,25000,30000", 5),
+    (16, "💀Титановый", 500000, "werx", "100000,150000,200000,250000,300000,400000,500000", 8),
+    (17, "🌌Космический", 1000000, "souls", "5000,6000,7000,8000,9000,10000,15000", 7),
+    (18, "👑Имперский", 2000000, "diamonds", "10000,15000,20000,25000,30000,40000,50000", 6),
+    (19, "⚡Легенда", 3500000, "werx", "500000,600000,700000,800000,900000,1000000,1500000", 5),
+    (20, "🌟Абсолют", 5000000, "werx", "1000000,1500000,2000000,2500000,3000000,4000000,5000000", 3)
+]
+c.executemany('INSERT OR IGNORE INTO cases VALUES(?,?,?,?,?,?)', cases_data)
+conn.commit()
+
+def get_user(uid):
+    r = c.execute('''SELECT werx, diamonds, werk, rubins, stars, prestige, souls,
+                     love_points, love_level, last_daily, xp, level, sytana_wins,
+                     boss_wins, crystals, energy FROM users WHERE user_id=?''', (uid,)).fetchone()
+    if r:
+        return r
+    c.execute('INSERT INTO users(user_id, werx) VALUES(?,?)', (uid, 1000))
+    conn.commit()
+    return (1000, 0, 0, 0, 0, 1, 0, 0, 0, None, 0, 1, 0, 0, 0, 100)
+
+def u(uid, a, col):
+    c.execute(f'UPDATE users SET {col} = {col} + ? WHERE user_id = ?', (a, uid))
+    conn.commit()
+
+def uw(uid, a): u(uid, a, 'werx')
+def ud(uid, a): u(uid, a, 'diamonds')
+def uk(uid, a): u(uid, a, 'werk')
+def us(uid, a): u(uid, a, 'stars')
+def usl(uid, a): u(uid, a, 'souls')
+def up(uid, a): u(uid, a, 'prestige')
+def ux(uid, a): u(uid, a, 'xp')
+def ue(uid, a): u(uid, a, 'energy')
+def uc(uid, a): u(uid, a, 'crystals')
+def usw(uid, a): u(uid, a, 'sytana_wins')
+def ubw(uid, a): u(uid, a, 'boss_wins')
+
+def ul(uid, a):
+    c.execute('UPDATE users SET love_points = love_points + ? WHERE user_id = ?', (a, uid))
+    conn.commit()
+    p, l = c.execute('SELECT love_points, love_level FROM users WHERE user_id=?', (uid,)).fetchone()
+    nl = p // 200
+    if nl > l:
+        c.execute('UPDATE users SET love_level = ? WHERE user_id = ?', (nl, uid))
+        conn.commit()
+        return True, nl
+    return False, l
+
+def add_log(uid, g, b, r, ch):
+    c.execute('INSERT INTO bets_log(user_id, game, bet, result, change, time) VALUES(?,?,?,?,?,?)',
+              (uid, g, b, r, ch, datetime.now().isoformat()))
+    conn.commit()
+
+# ПРЕСТИЖ
+PRC = [0, 100, 300, 700, 1500, 3000, 6000, 10000, 20000, 35000, 50000]
+PRM = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 15]
+PRN = ["🌱Новичок", "🌟Искатель", "⭐Охотник за душами", "✨Мастер душ",
+       "💫Хранитель", "⚡Повелитель", "🔥Асура", "👑Демон",
+       "💎Легенда", "🌀Бог душ", "👁️Абсолют"]
+
+# КОМАНДЫ
+@dp.message(Command("start"))
+@dp.message(F.text.lower() == "start")
+async def start(m):
+    get_user(m.from_user.id)
+    await m.answer("👻 Werx Casino\n\n"
+                   "баланс\nпрофиль\nбонус\nработа\n"
+                   "казино\nмины\nкейсы\nсытана\nдуши\nлюбовь\n"
+                   "престиж\nбосс\nтоп\nтоп_любви\nтоп_душ\nтоп_сытана\nтоп_босс\nадмин")
+
+@dp.message(Command("баланс"))
+@dp.message(F.text.lower() == "баланс")
+async def bal(m):
+    w, d, wk, r, s, p, souls, lp, ll, _, xp, lvl, sw, bw, cr, en = get_user(m.from_user.id)
+    await m.answer(f"💰БАЛАНС\n⭐{w}\n💎{d}\n🔧{wk}\n❤️{r}\n✨{s}\n👻{souls}\n💗{lp}\n🔮{cr}\n⚡{en}\n🏆Престиж{p}")
+
+@dp.message(Command("профиль"))
+@dp.message(F.text.lower() == "профиль")
+async def prof(m):
+    w, d, wk, r, s, p, souls, lp, ll, _, xp, lvl, sw, bw, cr, en = get_user(m.from_user.id)
+    await m.answer(f"👤ПРОФИЛЬ:{m.from_user.first_name}\n"
+                   f"⭐{w}\n💎{d}\n🔧{wk}\n❤️{r}\n✨{s}\n👻{souls}\n"
+                   f"💗Уровень любви{ll}\n🏆Престиж{p}({PRN[p-1]}) x{PRM[p-1]}\n"
+                   f"⚔️Сытана{sw}\n👹Босс{bw}\nУровень{lvl}|XP{xp}")
+
+@dp.message(Command("бонус"))
+@dp.message(F.text.lower() == "бонус")
+async def daily(m):
+    uid = m.from_user.id
+    r = c.execute('SELECT last_daily FROM users WHERE user_id=?', (uid,)).fetchone()
+    today = datetime.now().date().isoformat()
+    if r and r[0] == today:
+        return await m.answer("❌Уже получал!")
+    b = random.randint(200, 500)
+    uw(uid, b)
+    ue(uid, 50)
+    c.execute('UPDATE users SET last_daily=? WHERE user_id=?', (today, uid))
+    conn.commit()
+    await m.answer(f"🎁+{b}⭐+50⚡")
+
+@dp.message(Command("работа"))
+@dp.message(F.text.lower() == "работа")
+async def work(m):
+    r = random.randint(80, 200)
+    uw(m.from_user.id, r)
+    await m.answer(f"💼+{r}⭐")
+
+@dp.message(Command("престиж"))
+@dp.message(F.text.lower() == "престиж")
+async def pres(m):
+    uid = m.from_user.id
+    w, d, wk, r, s, p, souls, lp, ll, _, xp, lvl, sw, bw, cr, en = get_user(uid)
+    if p >= 10:
+        return await m.answer("👁️Максимальный престиж!")
+    need = PRC[p]
+    if souls < need:
+        return await m.answer(f"❌Нужно{need}👻!У тебя{souls}")
+    usl(uid, -need)
+    up(uid, 1)
+    await m.answer(f"🌟ПРЕСТИЖ{p}→{p+1}\n👻{PRN[p-1]}→{PRN[p]}\n💰x{PRM[p-1]}→x{PRM[p]}\n-{need}👻")
+
+@dp.message(Command("босс"))
+@dp.message(F.text.lower() == "босс")
+async def boss(m):
+    uid = m.from_user.id
+    w, d, wk, r, s, p, souls, lp, ll, _, xp, lvl, sw, bw, cr, en = get_user(uid)
+    if souls < 100:
+        return await m.answer("❌Нужно100👻!")
+    usl(uid, -100)
+    if random.randint(1, 100) <= 30:
+        win = 1000
+        usl(uid, win)
+        ubw(uid, 1)
+        ux(uid, 100)
+        await m.answer(f"👹ПОБЕДА!+{win}👻+100XP!Побед:{bw+1}")
+    else:
+        await m.answer("💀ПОРАЖЕНИЕ!-100👻")
+
+@dp.message(Command("казино"))
+@dp.message(F.text.lower().startswith("казино"))
+async def casino(m):
+    p = m.text.split()
+    if len(p) != 3:
+        return await m.answer("❌казино 100 чет")
+    try:
+        bet = int(p[1])
+        typ = p[2].lower()
+    except:
+        return await m.answer("❌Ошибка!")
+    uid = m.from_user.id
+    w, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = get_user(uid)
+    if bet < 10 or bet > w:
+        return await m.answer(f"❌10-{w}")
+    if typ not in ["чет", "нечет"]:
+        return await m.answer("❌чет/нечет")
+    uw(uid, -bet)
+    n = random.randint(1, 6)
+    win = (typ == "чет" and n % 2 == 0) or (typ == "нечет" and n % 2 == 1)
+    if win:
+        uw(uid, bet * 2)
+        await m.answer(f"🎰{n}\n✅+{bet*2}⭐")
+    else:
+        await m.answer(f"🎰{n}\n❌-{bet}⭐")
+
+@dp.message(Command("мины"))
+@dp.message(F.text.lower().startswith("мины"))
+async def mines(m):
+    p = m.text.split()
+    if len(p) != 2:
+        return await m.answer("❌мины 100")
+    try:
+        bet = int(p[1])
+    except:
+        return await m.answer("❌Ошибка!")
+    uid = m.from_user.id
+    w, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = get_user(uid)
+    if bet < 10 or bet > w:
+        return await m.answer(f"❌10-{w}")
+    uw(uid, -bet)
+    mines = random.sample(range(1, 26), 5)
+    ch = random.randint(1, 25)
+    if ch in mines:
+        await m.answer(f"💣МИНА!-{bet}⭐")
+    else:
+        uw(uid, bet * 2)
+        await m.answer(f"💎АЛМАЗ!+{bet*2}⭐")
+
+@dp.message(Command("сытана"))
+@dp.message(F.text.lower().startswith("сытана"))
+async def sytana(m):
+    p = m.text.split()
+    if len(p) != 2:
+        return await m.answer("❌сытана 100")
+    try:
+        bet = int(p[1])
+    except:
+        return await m.answer("❌Ошибка!")
+    uid = m.from_user.id
+    w, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _ = get_user(uid)
+    if bet < 10 or bet > w:
+        return await m.answer(f"❌10-{w}")
+    uw(uid, -bet)
+    sides = ["⚔️ЛЕВАЯ", "🗡️ПРАВАЯ", "🔪ЦЕНТР"]
+    u = random.randint(0, 2)
+    comp = random.randint(0, 2)
+    if u == comp:
+        uw(uid, bet * 2)
+        usw(uid, 1)
+        await m.answer(f"⚔️СЫТАНА\nТвой:{sides[u]}\nВраг:{sides[comp]}\n✅+{bet*2}⭐")
+    else:
+        await m.answer(f"⚔️СЫТАНА\nТвой:{sides[u]}\nВраг:{sides[comp]}\n❌-{bet}⭐")
+
+@dp.message(Command("души"))
+@dp.message(F.text.lower().startswith("души"))
+async def souls(m):
+    p = m.text.split()
+    if len(p) != 2:
+        return await m.answer("❌души 10")
+    try:
+        bet = int(p[1])
+    except:
+        return await m.answer("❌Ошибка!")
+    uid = m.from_user.id
+    _, _, _, _, _, _, souls, _, _, _, _, _, _, _, _, _ = get_user(uid)
+    if bet < 1 or bet > souls:
+        return await m.answer(f"❌1-{souls}")
+    usl(uid, -bet)
+    sp = ["👻Мирный x1", "💀Тёмный x2", "✨Светлый x0", "🌀Хаотичный x3", "🔥Пламенный x5"]
+    ml = [1, 2, 0, 3, 5]
+    i = random.randint(0, 4)
+    if ml[i] > 0:
+        win = bet * ml[i]
+        usl(uid, win)
+        await m.answer(f"👻{sp[i]}\n✅+{win}👻")
+    else:
+        await m.answer(f"👻{sp[i]}\n❌-{bet}👻")
+
+@dp.message(Command("любовь"))
+@dp.message(F.text.lower().startswith("любовь"))
+async def love(m):
+    uid = m.from_user.id
+    a = random.randint(20, 100)
+    lv, nl = ul(uid, a)
+    txt = f"💗+{a}"
+    if lv:
+        txt += f"\n🎉УРОВЕНЬ{nl}!"
+    await m.answer(txt)
+
+@dp.message(Command("магазин"))
+@dp.message(F.text.lower() == "магазин")
+async def shop(m):
+    it = c.execute('SELECT item_id, name, price_werk FROM shop').fetchall()
+    text = "🛒МАГАЗИН\n" + "\n".join(f"{i}.{n}-{p}🔧" for i, n, p in it) + "\nкупить 1-7"
+    await m.answer(text)
+
+@dp.message(Command("купить"))
+@dp.message(F.text.lower().startswith("купить"))
+async def buy(m):
+    p = m.text.split()
+    if len(p) != 2:
+        return await m.answer("❌купить 1")
+    try:
+        iid = int(p[1])
+    except:
+        return await m.answer("❌Ошибка!")
+    row = c.execute('SELECT name, price_werk FROM shop WHERE item_id=?', (iid,)).fetchone()
+    if not row:
+        return await m.answer("❌Нет товара!")
+    name, price = row
+    uid = m.from_user.id
+    _, _, wk, _, _, _, _, _, _, _, _, _, _, _, _, _ = get_user(uid)
+    if wk < price:
+        return await m.answer(f"❌Нужно{price}🔧")
+    uk(uid, -price)
+    if iid == 4:
+        ud(uid, 100)
+        await m.answer(f"✅{name}\n-{price}🔧+100💎")
+    elif iid == 5:
+        usl(uid, 50)
+        await m.answer(f"✅{name}\n-{price}🔧+50👻")
+    elif iid == 6:
+        uc(uid, 50)
+        await m.answer(f"✅{name}\n-{price}🔧+50🔮")
+    elif iid == 7:
+        ue(uid, 25)
+        await m.answer(f"✅{name}\n-{price}🔧+25⚡")
+    else:
+        await m.answer(f"✅{name}\n-{price}🔧")
+
+@dp.message(Command("кейсы"))
+@dp.message(F.text.lower() == "кейсы")
+async def cases(m):
+    items = [
+        "📦100⭐", "💎300💎", "🌟1500⭐", "👻500👻", "🎭800⭐",
+        "👑3000⭐", "⚡8000⭐", "💖500💗", "✨300✨", "🔮5000⭐",
+        "🌙2000👻", "🔥4000⭐", "❄️2500💎", "🌀6000⭐", "👁️15000⭐",
+        "💀500к⭐", "🌌1м👻", "👑2м💎", "⚡3.5м⭐", "🌟5м⭐"
+    ]
+    buttons = [[InlineKeyboardButton(t, callback_data=f"case_{i}") for t in items]]
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await m.answer("🎁ВЫБЕРИКЕЙС(шанс3-25%):", reply_markup=kb)
+
+@dp.callback_query(lambda c: c.data.startswith('case_'))
+async def open_case(call):
+    cid = int(call.data.split('_')[1]) + 1
+    uid = call.from_user.id
+    case = c.execute('SELECT name, price, currency, rewards, chance FROM cases WHERE case_id=?', (cid,)).fetchone()
+    if not case:
+        return await call.answer("Ошибка!")
+    name, price, cur, rew, ch = case
+    rew = [int(x) for x in rew.split(',')]
+    w, d, wk, r, s, p, souls, lp, ll, _, xp, lvl, sw, bw, cr, en = get_user(uid)
+    bal = {'werx': w, 'diamonds': d, 'werk': wk, 'stars': s, 'souls': souls, 'love_points': lp}.get(cur, 0)
+    if bal < price:
+        return await call.answer(f"❌Нужно{price}!", show_alert=True)
+    if cur == 'werx':
+        uw(uid, -price)
+    elif cur == 'diamonds':
+        ud(uid, -price)
+    elif cur == 'werk':
+        uk(uid, -price)
+    elif cur == 'stars':
+        us(uid, -price)
+    elif cur == 'souls':
+        usl(uid, -price)
+    else:
+        ul(uid, -price)
+    rare = random.randint(1, 100) <= ch
+    rw = max(rew) if rare else random.choice(rew[:-1] if len(rew) > 1 else rew)
+    rtxt = "🌟РЕДКИЙ!🌟\n" if rare else ""
+    if cur == 'love_points':
+        lv, nl = ul(uid, rw)
+        restxt = f"+{rw}💗"
+        if lv:
+            restxt += f"\n🎉УРОВЕНЬ{nl}!"
+    else:
+        if cur == 'werx':
+            uw(uid, rw)
+            restxt = f"+{rw}⭐"
+        elif cur == 'diamonds':
+            ud(uid, rw)
+            restxt = f"+{rw}💎"
+        elif cur == 'werk':
+            uk(uid, rw)
+            restxt = f"+{rw}🔧"
+        elif cur == 'stars':
+            us(uid, rw)
+            restxt = f"+{rw}✨"
+        elif cur == 'souls':
+            usl(uid, rw)
+            restxt = f"+{rw}👻"
+        else:
+            restxt = f"+{rw}"
+    await call.message.edit_text(f"🎁{name}\n💰-{price}\n{rtxt}{restxt}")
+    await call.answer()
+
+# ТОПЫ
+@dp.message(Command("топ"))
+@dp.message(F.text.lower() == "топ")
+async def top_werx(m):
+    top = c.execute('SELECT user_id, werx FROM users ORDER BY werx DESC LIMIT 10').fetchall()
+    text = "🏆 ТОП ПО ВЕРКС 🏆\n\n"
+    for i, (uid, bal) in enumerate(top, 1):
+        medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
+        text += f"{medal} ID{uid} — {bal}⭐\n"
+    await m.answer(text)
+
+@dp.message(Command("топ_любви"))
+@dp.message(F.text.lower() == "топ_любви")
+async def top_love(m):
+    top = c.execute('SELECT user_id, love_points FROM users ORDER BY love_points DESC LIMIT 10').fetchall()
+    text = "💗 ТОП ПО ЛЮБВИ 💗\n\n"
+    for i, (uid, lp) in enumerate(top, 1):
+        medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
+        text += f"{medal} ID{uid} — {lp}💗\n"
+    await m.answer(text)
+
+@dp.message(Command("топ_душ"))
+@dp.message(F.text.lower() == "топ_душ")
+async def top_souls(m):
+    top = c.execute('SELECT user_id, souls FROM users ORDER BY souls DESC LIMIT 10').fetchall()
+    text = "👻 ТОП ПО ДУШАМ 👻\n\n"
+    for i, (uid, souls) in enumerate(top, 1):
+        medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
+        text += f"{medal} ID{uid} — {souls}👻\n"
+    await m.answer(text)
+
+@dp.message(Command("топ_сытана"))
+@dp.message(F.text.lower() == "топ_сытана")
+async def top_sytana(m):
+    top = c.execute('SELECT user_id, sytana_wins FROM users ORDER BY sytana_wins DESC LIMIT 10').fetchall()
+    text = "⚔️ ТОП ПО СЫТАНЕ ⚔️\n\n"
+    for i, (uid, wins) in enumerate(top, 1):
+        medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
+        text += f"{medal} ID{uid} — {wins} побед\n"
+    await m.answer(text)
+
+@dp.message(Command("топ_босс"))
+@dp.message(F.text.lower() == "топ_босс")
+async def top_boss(m):
+    top = c.execute('SELECT user_id, boss_wins FROM users ORDER BY boss_wins DESC LIMIT 10').fetchall()
+    text = "👹 ТОП ПОБЕД НАД БОССОМ 👹\n\n"
+    for i, (uid, wins) in enumerate(top, 1):
+        medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
+        text += f"{medal} ID{uid} — {wins} побед\n"
+    await m.answer(text)
+
+# АДМИН КОМАНДЫ
+@dp.message(Command("админ"))
+@dp.message(F.text.lower() == "админ")
+async def admin_panel(m):
+    if m.from_user.id not in ADMINS:
+        return await m.answer("❌ Нет доступа!")
+    await m.answer("👑 АДМИН ПАНЕЛЬ\n\n"
+                   "выдать [id] [сумма] [валюта]\n"
+                   "выдать_всем [сумма] [валюта]\n"
+                   "статистика")
+
+@dp.message(Command("выдать"))
+@dp.message(F.text.lower().startswith("выдать"))
+async def admin_give(m):
+    if m.from_user.id not in ADMINS:
+        return await m.answer("❌ Нет доступа!")
+    p = m.text.split()
+    if len(p) != 4:
+        return await m.answer("❌ выдать [id] [сумма] [валюта]")
+    try:
+        uid = int(p[1])
+        amount = int(p[2])
+        cur = p[3].lower()
+    except:
+        return await m.answer("❌ Ошибка!")
+    if cur == 'werx':
+        uw(uid, amount)
+    elif cur == 'diamonds':
+        ud(uid, amount)
+    elif cur == 'werk':
+        uk(uid, amount)
+    elif cur == 'rubins':
+        u(uid, amount, 'rubins')
+    elif cur == 'stars':
+        us(uid, amount)
+    elif cur == 'souls':
+        usl(uid, amount)
+    elif cur == 'crystals':
+        uc(uid, amount)
+    elif cur == 'energy':
+        ue(uid, amount)
+    elif cur == 'xp':
+        ux(uid, amount)
+    elif cur == 'prestige':
+        up(uid, amount)
+    else:
+        return await m.answer("❌ Неизвестная валюта!")
+    await m.answer(f"✅ Выдано {amount} {cur} пользователю {uid}")
+
+@dp.message(Command("выдать_всем"))
+@dp.message(F.text.lower().startswith("выдать_всем"))
+async def admin_give_all(m):
+    if m.from_user.id not in ADMINS:
+        return await m.answer("❌ Нет доступа!")
+    p = m.text.split()
+    if len(p) != 3:
+        return await m.answer("❌ выдать_всем [сумма] [валюта]")
+    try:
+        amount = int(p[1])
+        cur = p[2].lower()
+    except:
+        return await m.answer("❌ Ошибка!")
+    if cur == 'werx':
+        c.execute(f'UPDATE users SET werx = werx + {amount}')
+    elif cur == 'diamonds':
+        c.execute(f'UPDATE users SET diamonds = diamonds + {amount}')
+    elif cur == 'souls':
+        c.execute(f'UPDATE users SET souls = souls + {amount}')
+    elif cur == 'energy':
+       
